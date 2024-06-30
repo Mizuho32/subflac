@@ -7,7 +7,6 @@ import (
 	"reflect"
 
 	"subflac/flacutils"
-	"subflac/metautils"
 
 	"github.com/mewkiz/flac"
 	"github.com/mewkiz/flac/meta"
@@ -68,70 +67,28 @@ func main() {
 		}
 	}
 
-	N := stream.Info.FrameSizeMax
-	fileInfo, err := file.Stat()
+	// subflac init
+	subflac, err := flacutils.New(file, stream)
 	if err != nil {
-		fmt.Println("Error getting file info:", err)
+		fmt.Printf("Error Subflac init: %v\n", err)
 		return
 	}
-	// ファイルの大きさを取得
-	fileSize := fileInfo.Size()
-	fmt.Println("File size:", fileSize)
 
 	// 読み込み開始位置を計算
-	offset := fileSize / 2
-	//offset = int64(86 + stream.Info.FrameSizeMin*1)
-	//offset = int64(87)
+	offsets := []int64{subflac.FileSize() / 2, 86, int64(86 + stream.Info.FrameSizeMin*1), 87}
 
-	// 読み込み開始位置にシーク
-	_, err = file.Seek(offset, 0)
-	if err != nil {
-		fmt.Println("Error seeking in file:", err)
-		return
+	for _, offset := range offsets {
+		fmt.Printf("Find from %d:\n", offset)
+
+		frameStart, frameStartRel, utfLen, crc8, err := subflac.FrameStartByAddress(offset)
+		if err != nil {
+			fmt.Printf("Error reading frame start: %v\n", err)
+			return
+		}
+		fmt.Printf("  Sync code found at byte %d (rel: %d)\n", frameStart, frameStartRel)
+
+		// ヘッダーの解析
+		sampleNumber := subflac.SampleNumber(utfLen)
+		fmt.Printf("  Sample Number: %d, UTF len: %d, CRC8: %X\n", sampleNumber, utfLen, crc8)
 	}
-
-	buffer := make([]byte, N)
-	bytesRead, err := file.Read(buffer)
-	if err != nil {
-		fmt.Println("Error reading file:", err)
-		return
-	}
-
-	// Sync codeを探す
-	var frameStart int64
-	var frameStartRel int
-	var utfLen int
-
-	frameStart, frameStartRel, utfLen = metautils.FindFrameStart(buffer, offset, bytesRead, stream.Info.BlockSizeMax == stream.Info.BlockSizeMin)
-	fmt.Printf("Sync code found at byte %d\n", frameStart)
-
-	// 特定の位置にシーク
-	_, err = file.Seek(frameStart+32/8, 0) // 32bit: sample number/frame number offset
-	if err != nil {
-		fmt.Printf("Error seeking to position: %v\n", err)
-		return
-	}
-
-	// フレームヘッダーを読み取る
-	headerBuf := make([]byte, 56/8)
-	_, err = file.Read(headerBuf[:])
-	if err != nil {
-		fmt.Printf("Error reading frame header: %v\n", err)
-		return
-	}
-
-	// ヘッダーの解析
-	sampleNumber := metautils.DecodeGeneralizedUTF8Number(headerBuf, 0, utfLen)
-	crc8 := metautils.CalcCRC8(buffer, frameStartRel, 32/8+utfLen)
-
-	fmt.Printf("Sample Number: %d, UTF len: %d, CRC8: %X\n", sampleNumber, utfLen, crc8)
-
-	subflac, err := flacutils.New(file, stream)
-	frameStart2, _, _, err := subflac.FrameStartByAddress(subflac.FileSize() / 2)
-	if err != nil {
-		fmt.Printf("Error reading frame start: %v\n", err)
-		return
-	}
-
-	fmt.Printf("frameStart2: %d\n", frameStart2)
 }
