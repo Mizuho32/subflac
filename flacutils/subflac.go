@@ -42,21 +42,22 @@ func (s *Subflac) FileSize() int64 {
 	return s.fileSize
 }
 
-func (s *Subflac) FrameStartByAddress(offset int64) (int64, int, int, error) {
+func (s *Subflac) FrameStartByAddress(offset int64) (int64, int, int, byte, error) {
 	var frameStart int64 = -1
 	var frameStartRel int = -1
 	var utfLen int = -1
+	var crc8 byte = 0
 
 	// 読み込み開始位置にシーク
 	_, err := s.file.Seek(offset, 0)
 	if err != nil {
-		return frameStart, frameStartRel, utfLen, err
+		return frameStart, frameStartRel, utfLen, crc8, err
 	}
 
 	bytesRead, err := s.file.Read(s.searchBuffer)
 	buffer := s.searchBuffer
 	if err != nil {
-		return frameStart, frameStartRel, utfLen, err
+		return frameStart, frameStartRel, utfLen, crc8, err
 	}
 
 	// 16ビットのSync code: 0xFFF8 (0xFFF9 for variable)
@@ -74,29 +75,27 @@ func (s *Subflac) FrameStartByAddress(offset int64) (int64, int, int, error) {
 
 			// allocate frame header buffer
 			remainLen := bytesRead - i + 1
-			var frameHeaderBuff []byte
 			if remainLen < frameHeaderLen {
 				_, err := s.file.Seek(offset+int64(i), 0)
 				if err != nil {
-					return frameStart, frameStartRel, utfLen, err
+					return frameStart, frameStartRel, utfLen, crc8, err
 				}
 				_, err = s.file.Read(s.frameHeaderBuffer)
 				if err != nil {
-					return frameStart, frameStartRel, utfLen, err
+					return frameStart, frameStartRel, utfLen, crc8, err
 				}
-				frameHeaderBuff = s.frameHeaderBuffer
 			} else {
-				frameHeaderBuff = buffer[i:bytesRead]
+				copy(s.frameHeaderBuffer, buffer[i:(i+len(s.frameHeaderBuffer))])
 			}
 
-			utfLen, err := metautils.SampleNumFieldLen(frameHeaderBuff[0+32/8])
+			utfLen, err := metautils.SampleNumFieldLen(s.frameHeaderBuffer[0+32/8])
 			if err != nil {
 				continue
 			}
 			//fmt.Printf("Len: %d\n", utfLen)
 
-			crc8 := metautils.CalcCRC8(frameHeaderBuff, 0, 32/8+utfLen+0+0)
-			crc8OnMem := frameHeaderBuff[0+32/8+utfLen+0+0]
+			crc8 := metautils.CalcCRC8(s.frameHeaderBuffer, 0, 32/8+utfLen+0+0)
+			crc8OnMem := s.frameHeaderBuffer[0+32/8+utfLen+0+0]
 			//fmt.Printf("CRC: %X, onmem: %X\n", crc8, crc8OnMem)
 			if crc8 != crc8OnMem {
 				continue
@@ -104,9 +103,14 @@ func (s *Subflac) FrameStartByAddress(offset int64) (int64, int, int, error) {
 
 			frameStartRel = i
 			frameStart = offset + int64(i)
-			return frameStart, frameStartRel, utfLen, nil
+			return frameStart, frameStartRel, utfLen, crc8, nil
 		}
 	}
 
-	return frameStart, frameStartRel, utfLen, errors.New("frame start not found")
+	return frameStart, frameStartRel, utfLen, crc8, errors.New("frame start not found")
+}
+
+// frame number for fixed block size
+func (s *Subflac) SampleNumber(utfLen int) uint64 {
+	return metautils.DecodeGeneralizedUTF8Number(s.frameHeaderBuffer, 0+32/8, utfLen)
 }
