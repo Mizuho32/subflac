@@ -82,10 +82,15 @@ func DecodeGeneralizedUTF8Number(buff []byte, offsetRel int, len int) uint64 {
 	number := uint64(0)
 	var mask byte = 0xFF
 
-	number = uint64((mask >> (len + 1)) & buff[offsetRel])
-
-	for idx := 1; idx < len; idx++ {
-		number = (number << 6) | uint64(0b00111111&buff[offsetRel+idx])
+	for idx := 0; idx < len; idx++ {
+		byt := buff[offsetRel+idx]
+		//fmt.Printf("%02X ", byt)
+		if idx == 0 {
+			number = uint64((mask >> (len + 1)) & byt)
+		} else {
+			number = (number << 6) | uint64(0b00111111&byt)
+		}
 	}
+	//fmt.Println("")
 	return number
 }
