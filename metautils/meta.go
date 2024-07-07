@@ -74,23 +74,71 @@ func FindFrameStart(buffer []byte, offset int64, bytesRead int, isFixedBlk bool)
 }
 
 // UTF-8スタイルのエンコーディングをデコードする関数
-func DecodeGeneralizedUTF8Number(buff []byte, offsetRel int, len int) uint64 {
+func DecodeGeneralizedUTF8Number(buff []byte, offsetRel int, len int) int64 {
 	if len == 1 {
-		return uint64(buff[offsetRel])
+		return int64(buff[offsetRel])
 	}
 
-	number := uint64(0)
+	number := int64(0)
 	var mask byte = 0xFF
 
 	for idx := 0; idx < len; idx++ {
 		byt := buff[offsetRel+idx]
 		//fmt.Printf("%02X ", byt)
 		if idx == 0 {
-			number = uint64((mask >> (len + 1)) & byt)
+			number = int64((mask >> (len + 1)) & byt)
 		} else {
-			number = (number << 6) | uint64(0b00111111&byt)
+			number = (number << 6) | int64(0b00111111&byt)
 		}
 	}
 	//fmt.Println("")
 	return number
+}
+
+func EncodeGeneralizedUTF8Number(num int64, buff []byte, offsetRel int, len int) {
+	if len == 1 {
+		buff[offsetRel] = byte(num)
+		return
+	}
+
+	var mask byte = 0xFF
+
+	for idx := 0; idx < len; idx++ {
+		byt := buff[offsetRel+idx]
+		numBits := byte(num >> (6 * (len - 1 - idx)))
+		//fmt.Printf("%02X ", byt)
+		if idx == 0 {
+			readBits := (mask << (8 - (len + 1))) & byt
+			buff[offsetRel+idx] = ((mask >> (len + 1)) & numBits) | readBits
+		} else {
+			readBits := 0b11000000 & byt
+			buff[offsetRel+idx] = (0b00111111 & numBits) | readBits
+		}
+	}
+	//fmt.Println("")
+}
+
+func ParseSubframe(buff []byte, ofst int, bps int) (subframeLen int, err error) {
+	header := buff[ofst]
+	subframeType := (header >> 1) & 0b00111111
+
+	wastedFlag := header & 0x01
+	k := 0
+
+	if wastedFlag == 1 {
+		return -1, fmt.Errorf("Not implemented k(%d) != 0 case", k)
+	}
+
+	if subframeType == 0 { // CONSTANT
+
+	} else if subframeType == 1 { // VERBATIM
+
+	} else if subframeType&0b00100000 > 0 { // LPC
+		if subframeType&0b00000111 <= 4 {
+		}
+
+	} else if subframeType&0b00111000 > 0 { // FIXED
+		order := subframeType&0b00011111 + 1
+	}
+
 }

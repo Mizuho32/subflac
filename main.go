@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"reflect"
@@ -90,5 +91,48 @@ func main() {
 		// ヘッダーの解析
 		sampleNumber := subflac.SampleNumber(utfLen)
 		fmt.Printf("  Sample Number: %d, UTF len: %d, CRC8: %X\n", sampleNumber, utfLen, crc8)
+	}
+
+	targetFrameNums := []int64{0, 1, 1666}
+	fmt.Println("")
+	for _, target := range targetFrameNums {
+		fmt.Printf("Find frame num %d:\n", target)
+		address, sampleNum, err := subflac.GetNthFrame(target)
+
+		if err != nil {
+			fmt.Printf("Error GetNth: %v\n", err)
+			return
+		}
+		fmt.Printf("  Got sample %d at %d\n", sampleNum, address)
+	}
+
+	startAddr, startSample, endAddr, endSample, err := subflac.GetInterval(10.0, 30.0)
+	if err != nil {
+		fmt.Printf("Error GetInterval test: %v\n", err)
+		return
+	}
+	fmt.Printf("%d at %d -> %d at %d\n", startSample, startAddr, endSample, endAddr)
+
+	filename := "test.flac"
+	//subflacStream, err := subflac.GenSubFlac(10.0, 30.0)
+	subflacStream, err := subflac.GenSubFlac(10.0, 10.1)
+	if err != nil {
+		fmt.Println("Error creating subflacStream:", err)
+		return
+	}
+
+	// Open the new file for writing
+	outputFile, err := os.Create(filename)
+	if err != nil {
+		fmt.Println("Error creating output file:", err)
+		return
+	}
+	defer outputFile.Close()
+
+	// Write from MultiReader to the new file
+	_, err = io.Copy(outputFile, subflacStream)
+	if err != nil {
+		fmt.Println("Error writing to output file:", err)
+		return
 	}
 }
